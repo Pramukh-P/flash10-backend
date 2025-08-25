@@ -7,10 +7,10 @@ const newsSchema = new mongoose.Schema({
   imageUrl: { type: String, default: "/public/default.jpg" },
   url: String,
   publishedAt: Date,
-  dayTag: String, // like 2025-08-25
+  dayTag: String,
 });
 
-// Auto-delete after 7 days (604800 seconds)
+// Auto-delete after 7 days
 newsSchema.index({ publishedAt: 1 }, { expireAfterSeconds: 604800 });
 
 const News = mongoose.model("News", newsSchema);

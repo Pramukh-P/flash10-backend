@@ -34,8 +34,8 @@ app.use(morgan("dev"));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Serve static files
-app.use("/public", express.static(path.join(__dirname, "../public")));
+// Serve static files (logo, default images)
+app.use("/public", express.static(path.join(__dirname, "../../public")));
 
 // Routes
 app.use("/news", newsRoutes);
@@ -55,20 +55,31 @@ mongoose
   .then(() => {
     console.log("✅ Connected to MongoDB Atlas");
 
-    // Immediately fetch news once DB is connected
+    // Fetch news immediately
     fetchTopNews()
       .then(() => console.log("✅ Initial news fetch complete"))
       .catch((err) => console.error("❌ Initial news fetch failed:", err));
 
-    // Schedule daily news fetch at 12:05 AM
+    // Schedule daily news fetch
     scheduleNewsFetch();
 
-    // Start Express server
+    // Start server
     app.listen(PORT, () =>
       console.log(`🚀 Flash20 server running on port ${PORT}`)
     );
   })
   .catch((err) => {
     console.error("❌ MongoDB Connection Error:", err.message);
-    process.exit(1); // Exit if DB connection fails
+    process.exit(1);
   });
+
+// Global error handling
+process.on("unhandledRejection", (err) => {
+  console.error("❌ Unhandled Rejection:", err.message);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("❌ Uncaught Exception:", err.message);
+  process.exit(1);
+});

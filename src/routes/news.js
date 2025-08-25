@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get("/", async (req, res) => {
   try {
-    const news = await getNews(); // fetch from MongoDB
+    const news = await getNews();
     res.json(news);
   } catch (err) {
     console.error(err);
