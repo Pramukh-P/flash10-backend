@@ -1,20 +1,14 @@
 import mongoose from "mongoose";
 
 const connectDB = async () => {
-  const uri = process.env.MONGO_URI;
-  if (!uri) {
-    console.error("❌ MONGO_URI is missing in .env");
-    process.exit(1);
-  }
-
   try {
-    const conn = await mongoose.connect(uri, {
+    await mongoose.connect(process.env.MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
-  } catch (err) {
-    console.error("❌ MongoDB Connection Error:", err.message);
+    console.log("✅ Connected to MongoDB Atlas");
+  } catch (error) {
+    console.error("❌ MongoDB Connection Error:", error.message);
     process.exit(1);
   }
 };
