@@ -1,29 +1,32 @@
 // server/src/index.js
 
 import dotenv from "dotenv";
-dotenv.config(); // Must be first to load .env variables
-
-// Debug: check if key is loaded
-console.log("🔑 NEWS_API_KEY:", process.env.NEWS_API_KEY);
+dotenv.config(); // Load .env first
 
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
+import mongoose from "mongoose";
 
-import connectDB from "./config/db.js";
 import { fetchTopNews, scheduleNewsFetch } from "./jobs/fetchNews.js";
 import newsRoutes from "./routes/news.js";
 
-// Connect to MongoDB
-connectDB();
+// Environment variables
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI;
+const NEWS_API_KEY = process.env.NEWS_API_KEY;
+
+// Debug keys
+console.log("🔑 NEWS_API_KEY:", NEWS_API_KEY);
+console.log("🗄️ MONGO_URI detected:", !!MONGO_URI);
 
 // Create Express app
 const app = express();
 
 // Middleware
-app.use(cors()); // Allow frontend during development
+app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
@@ -31,13 +34,13 @@ app.use(morgan("dev"));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Serve static files (default images, etc.)
+// Serve static files
 app.use("/public", express.static(path.join(__dirname, "../public")));
 
 // Routes
 app.use("/news", newsRoutes);
 
-// Health check route
+// Health check
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
@@ -46,16 +49,26 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Immediately fetch news once the server starts
-fetchTopNews()
-  .then(() => console.log("✅ Initial news fetch complete"))
-  .catch((err) => console.error("❌ Initial news fetch failed:", err));
+// Connect to MongoDB Atlas
+mongoose
+  .connect(MONGO_URI)
+  .then(() => {
+    console.log("✅ Connected to MongoDB Atlas");
 
-// Schedule daily news fetch at 12:05 AM
-scheduleNewsFetch();
+    // Immediately fetch news once DB is connected
+    fetchTopNews()
+      .then(() => console.log("✅ Initial news fetch complete"))
+      .catch((err) => console.error("❌ Initial news fetch failed:", err));
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Flash20 server running on http://localhost:${PORT}`);
-});
+    // Schedule daily news fetch at 12:05 AM
+    scheduleNewsFetch();
+
+    // Start Express server
+    app.listen(PORT, () =>
+      console.log(`🚀 Flash20 server running on port ${PORT}`)
+    );
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Error:", err.message);
+    process.exit(1); // Exit if DB connection fails
+  });
