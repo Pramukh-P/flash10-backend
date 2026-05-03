@@ -1,6 +1,5 @@
 // flash10-backend/src/controllers/newsController.js
 import News from "../models/News.js";
-import axios from "axios";
 
 // GET /news — supports ?category=sports&page=1&limit=20&search=term
 export const getNews = async (req, res) => {
@@ -73,6 +72,7 @@ export const getCategorySummary = async (req, res) => {
 };
 
 // POST /news/:id/summarize — AI summarizer (protected route)
+// Uses native fetch (Node 18+) — avoids axios misrouting to localhost
 export const summarizeNews = async (req, res) => {
   try {
     const newsItem = await News.findById(req.params.id);
@@ -85,45 +85,50 @@ export const summarizeNews = async (req, res) => {
 
     const text = (newsItem.content || newsItem.description || newsItem.title || "").slice(0, 1024);
 
-    // Hugging Face Inference API — facebook/bart-large-cnn (free)
-    // Use axios({ url }) form to guarantee the full URL is used correctly
-    const response = await axios({
-      method: "post",
-      url: "https://api-inference.huggingface.co/models/facebook/bart-large-cnn",
-      data: {
-        inputs: text,
-        parameters: { max_length: 150, min_length: 40, do_sample: false },
-      },
-      headers: {
-        Authorization: `Bearer ${HUGGINGFACE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 35000,
-    });
+    // Native fetch — guaranteed to hit the external URL, no axios proxy issues
+    const hfRes = await fetch(
+      "https://api-inference.huggingface.co/models/facebook/bart-large-cnn",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + HUGGINGFACE_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputs: text,
+          parameters: { max_length: 150, min_length: 40, do_sample: false },
+        }),
+        signal: AbortSignal.timeout(35000),
+      }
+    );
 
-    // HF returns [{ summary_text: "..." }]
-    const summary = response.data?.[0]?.summary_text || "Could not generate summary.";
-    res.json({ summary });
+    const data = await hfRes.json();
 
-  } catch (err) {
-    // If model is cold-starting, HF returns 503 with estimated_time
-    if (err.response?.status === 503) {
-      const wait = err.response.data?.estimated_time || 20;
+    // Model cold-starting — HF returns 503 with estimated_time
+    if (hfRes.status === 503) {
+      const wait = data?.estimated_time || 20;
       return res.status(503).json({
-        error: `Model is warming up, retry in ${Math.ceil(wait)} seconds.`,
+        error: "Model is warming up, retry in " + Math.ceil(wait) + " seconds.",
         retryAfter: Math.ceil(wait),
       });
     }
-    // Log clearly so you can debug in Render logs
-    console.error(
-      "AI summarizer error — status:", err.response?.status,
-      "| data:", JSON.stringify(err.response?.data || err.message).slice(0, 300)
-    );
+
+    if (!hfRes.ok) {
+      console.error("HuggingFace error:", hfRes.status, JSON.stringify(data).slice(0, 300));
+      return res.status(500).json({ error: "Failed to summarize article" });
+    }
+
+    // HF returns [{ summary_text: "..." }]
+    const summary = data?.[0]?.summary_text || "Could not generate summary.";
+    res.json({ summary });
+
+  } catch (err) {
+    console.error("AI summarizer error:", err.message);
     res.status(500).json({ error: "Failed to summarize article" });
   }
 };
 
-// GET /news/for-you — personalized feed (protected)
+// GET /news/feed/for-you — personalized feed (protected)
 export const getPersonalizedNews = async (req, res) => {
   try {
     const { preferences } = req.user;
@@ -152,4 +157,4 @@ export const getPersonalizedNews = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch personalized news" });
   }
-}
+};
