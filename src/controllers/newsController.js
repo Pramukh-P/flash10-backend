@@ -97,7 +97,7 @@ export const summarizeNews = async (req, res) => {
         "/openai/v1/chat/completions",
         { "Authorization": "Bearer " + GROQ_API_KEY, "Content-Type": "application/json" },
         {
-          model: "llama3-8b-8192",  // free model on Groq
+          model: "llama-3.1-8b-instant",  // free model on Groq
           messages: [{ role: "user", content: prompt }],
           max_tokens: 300,
           temperature: 0.3,
