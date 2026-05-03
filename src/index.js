@@ -1,7 +1,6 @@
-// server/src/index.js
-
+// flash10-backend/src/index.js
 import dotenv from "dotenv";
-dotenv.config(); // Load .env first
+dotenv.config();
 
 import express from "express";
 import cors from "cors";
@@ -9,63 +8,66 @@ import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
-
-import { fetchTopNews, scheduleNewsFetch } from "./jobs/fetchNews.js";
+import { scheduleNewsFetch, fetchAllCategories } from "./jobs/fetchNews.js";
 import newsRoutes from "./routes/news.js";
+import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/user.js";
 
-// Environment variables
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
-const NEWS_API_KEY = process.env.NEWS_API_KEY;
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-// Debug keys
-console.log("🔑 NEWS_API_KEY:", NEWS_API_KEY);
-console.log("🗄️ MONGO_URI detected:", !!MONGO_URI);
-
-// Create Express app
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [FRONTEND_URL, "https://flash10.netlify.app", /\.netlify\.app$/],
+  credentials: true,
+}));
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Resolve __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Serve static files (logo, default images)
 app.use("/public", express.static(path.join(__dirname, "../../public")));
 
 // Routes
 app.use("/news", newsRoutes);
+app.use("/auth", authRoutes);
+app.use("/user", userRoutes);
 
 // Health check
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
-    service: "Flash20 API",
+    service: "Flash10 API v2",
     timestamp: new Date().toISOString(),
   });
 });
 
-// Connect to MongoDB Atlas
+// Connect to MongoDB and start server
 mongoose
   .connect(MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log("✅ Connected to MongoDB Atlas");
 
-    // Fetch news immediately
-    fetchTopNews()
-      .then(() => console.log("✅ Initial news fetch complete"))
-      .catch((err) => console.error("❌ Initial news fetch failed:", err));
-
-    // Schedule daily news fetch
+    // Schedule news fetch every 12 hours (does NOT fetch on startup)
     scheduleNewsFetch();
 
-    // Start server
+    // Only fetch on startup if DB is empty
+    const { default: News } = await import("./models/News.js");
+    const count = await News.countDocuments();
+    if (count === 0) {
+      console.log("📰 DB is empty, doing initial fetch...");
+      await fetchAllCategories();
+      console.log("✅ Initial news fetch complete");
+    } else {
+      console.log(`ℹ️  DB has ${count} articles, skipping initial fetch`);
+    }
+
     app.listen(PORT, () =>
-      console.log(`🚀 Flash20 server running on port ${PORT}`)
+      console.log(`🚀 Flash10 server running on port ${PORT}`)
     );
   })
   .catch((err) => {
@@ -73,7 +75,6 @@ mongoose
     process.exit(1);
   });
 
-// Global error handling
 process.on("unhandledRejection", (err) => {
   console.error("❌ Unhandled Rejection:", err.message);
   process.exit(1);
