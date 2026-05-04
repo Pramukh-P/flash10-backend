@@ -8,7 +8,7 @@ import {
   getPersonalizedNews,
 } from "../controllers/newsController.js";
 import { protect } from "../middleware/auth.js";
-import { fetchCategory } from "../jobs/fetchNews.js";
+import { fetchCategory, fetchAllCategories } from "../jobs/fetchNews.js";
 
 const router = express.Router();
 
@@ -16,18 +16,32 @@ const router = express.Router();
 router.get("/", getNews);
 router.get("/categories/summary", getCategorySummary);
 
-// One-time fix: refetch a specific category (use in browser to fix missing politics)
-// Example: GET /news/admin/refetch/politics?secret=flash10secret
-router.get("/admin/refetch/:category", async (req, res) => {
-  if (req.query.secret !== (process.env.ADMIN_SECRET || "flash10secret")) {
+// External cron trigger — called by cron-job.org every 12 hours
+// GET /news/admin/fetch-all?secret=YOUR_ADMIN_SECRET
+router.get("/admin/fetch-all", async (req, res) => {
+  const secret = process.env.ADMIN_SECRET || "flash10secret";
+  if (req.query.secret !== secret) {
     return res.status(403).json({ error: "Forbidden" });
   }
-  try {
-    await fetchCategory(req.params.category);
-    res.json({ ok: true, message: `Fetched category: ${req.params.category}` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  // Respond immediately so cron-job.org doesn't time out (fetch takes ~30s)
+  res.json({ ok: true, message: "News fetch started", time: new Date().toISOString() });
+  // Run fetch in background after response is sent
+  fetchAllCategories().catch((err) =>
+    console.error("Background fetch error:", err.message)
+  );
+});
+
+// Refetch a single category
+// GET /news/admin/refetch/:category?secret=YOUR_ADMIN_SECRET
+router.get("/admin/refetch/:category", async (req, res) => {
+  const secret = process.env.ADMIN_SECRET || "flash10secret";
+  if (req.query.secret !== secret) {
+    return res.status(403).json({ error: "Forbidden" });
   }
+  res.json({ ok: true, message: `Fetch started for: ${req.params.category}` });
+  fetchCategory(req.params.category).catch((err) =>
+    console.error("Background fetch error:", err.message)
+  );
 });
 
 router.get("/:id", getNewsById);
