@@ -9,6 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 import { scheduleNewsFetch, fetchAllCategories } from "./jobs/fetchNews.js";
+import { cleanupOldNews } from "./controllers/newsController.js";
 import newsRoutes from "./routes/news.js";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
@@ -19,7 +20,6 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
 const app = express();
 
-// Middleware
 app.use(cors({
   origin: [FRONTEND_URL, "https://flash10.netlify.app", /\.netlify\.app$/],
   credentials: true,
@@ -29,58 +29,41 @@ app.use(morgan("dev"));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 app.use("/public", express.static(path.join(__dirname, "../../public")));
 
-// Routes
 app.use("/news", newsRoutes);
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 
-// Health check
 app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "Flash10 API v2",
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ ok: true, service: "Flash10 API v2", timestamp: new Date().toISOString() });
 });
 
-// Connect to MongoDB and start server
-mongoose
-  .connect(MONGO_URI)
-  .then(async () => {
-    console.log("✅ Connected to MongoDB Atlas");
+mongoose.connect(MONGO_URI).then(async () => {
+  console.log("✅ Connected to MongoDB Atlas");
 
-    // Schedule news fetch every 12 hours (does NOT fetch on startup)
-    scheduleNewsFetch();
+  // Always clean up old articles on every wake — lightweight, instant
+  await cleanupOldNews();
 
-    // Only fetch on startup if DB is empty
-    const { default: News } = await import("./models/News.js");
-    const count = await News.countDocuments();
-    if (count === 0) {
-      console.log("📰 DB is empty, doing initial fetch...");
-      await fetchAllCategories();
-      console.log("✅ Initial news fetch complete");
-    } else {
-      console.log(`ℹ️  DB has ${count} articles, skipping initial fetch`);
-    }
+  // Schedule internal cron (backup — mainly cron-job.org does the triggering)
+  scheduleNewsFetch();
 
-    app.listen(PORT, () =>
-      console.log(`🚀 Flash10 server running on port ${PORT}`)
-    );
-  })
-  .catch((err) => {
-    console.error("❌ MongoDB Connection Error:", err.message);
-    process.exit(1);
-  });
+  // Only fetch if DB is empty
+  const { default: News } = await import("./models/News.js");
+  const count = await News.countDocuments();
+  if (count === 0) {
+    console.log("📰 DB is empty, doing initial fetch...");
+    await fetchAllCategories();
+    console.log("✅ Initial news fetch complete");
+  } else {
+    console.log(`ℹ️  DB has ${count} articles, skipping initial fetch`);
+  }
 
-process.on("unhandledRejection", (err) => {
-  console.error("❌ Unhandled Rejection:", err.message);
+  app.listen(PORT, () => console.log(`🚀 Flash10 server running on port ${PORT}`));
+}).catch((err) => {
+  console.error("❌ MongoDB Connection Error:", err.message);
   process.exit(1);
 });
 
-process.on("uncaughtException", (err) => {
-  console.error("❌ Uncaught Exception:", err.message);
-  process.exit(1);
-});
+process.on("unhandledRejection", (err) => { console.error("❌ Unhandled Rejection:", err.message); process.exit(1); });
+process.on("uncaughtException", (err) => { console.error("❌ Uncaught Exception:", err.message); process.exit(1); });
