@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 import { scheduleNewsFetch, fetchAllCategories } from "./jobs/fetchNews.js";
 import { cleanupOldNews } from "./controllers/newsController.js";
+import { startKeepAlive } from "./jobs/keepAlive.js";
 import newsRoutes from "./routes/news.js";
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/user.js";
@@ -42,10 +43,13 @@ app.get("/health", (req, res) => {
 mongoose.connect(MONGO_URI).then(async () => {
   console.log("✅ Connected to MongoDB Atlas");
 
-  // Always clean up old articles on every wake — lightweight, instant
+  // Clean up old articles on every wake
   await cleanupOldNews();
 
-  // Schedule internal cron (backup — mainly cron-job.org does the triggering)
+  // Start keep-alive to prevent Render from sleeping
+  startKeepAlive();
+
+  // Schedule internal cron (backup)
   scheduleNewsFetch();
 
   // Only fetch if DB is empty
